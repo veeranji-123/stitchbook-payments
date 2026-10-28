@@ -6,7 +6,7 @@ It creates and verifies Razorpay orders, and it accepts Razorpay webhooks. Booki
 
 `JWT_SECRET` must match `stitchbook-core`, so a customer token from core is accepted here.
 
-Payment alerts are not sent yet. Those belong in `stitchbook-notifications`.
+Payment alerts are sent to `stitchbook-notifications` when `NOTIFICATIONS_URL` is set.
 
 ## Run
 

@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const { requireUser } = require('../middleware/auth');
 const { getBooking, getBookingByOrder, getBookingByPayment, updateBookingPayment } = require('../coreClient');
 const { razorpay, razorpayKeyId, razorpayWebhookSecret, verifyPaymentSignature, verifyWebhookSignature } = require('../razorpay');
+const { notify } = require('../notify');
 
 const router = express.Router();
 const ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
@@ -114,6 +115,12 @@ router.post('/verify', requireUser, async (req, res) => {
     const saved = await updateBookingPayment(booking.id, { paymentStatus: 'paid', razorpayPaymentId });
     if (saved.status === 409) return res.json({ success: true, message: 'Payment already verified' });
     if (saved.status !== 200) return res.status(502).json({ error: 'Booking service unavailable' });
+    await notify(
+      booking.customer_id,
+      'Payment Received',
+      `Your payment of ₹${booking.amount} for ${booking.garment_type} has been confirmed`,
+      booking.id
+    );
     return res.json({ success: true, message: 'Payment verified successfully' });
   } catch (e) {
     return res.status(500).json({ error: 'Payment verification failed' });
@@ -221,7 +228,15 @@ async function markCaptured(payload) {
     console.error(`[webhook] Amount mismatch for booking ${booking.id}`);
     return;
   }
-  await updateBookingPayment(booking.id, { paymentStatus: 'paid', razorpayPaymentId: payload.id });
+  const saved = await updateBookingPayment(booking.id, { paymentStatus: 'paid', razorpayPaymentId: payload.id });
+  if (saved.status === 200) {
+    await notify(
+      booking.customer_id,
+      'Payment Received',
+      `Your payment of ₹${booking.amount} for ${booking.garment_type} has been confirmed`,
+      booking.id
+    );
+  }
 }
 
 async function markFailed(payload) {
@@ -235,7 +250,16 @@ async function markRefunded(payload) {
   if (!payload.payment_id) return;
   const found = await getBookingByPayment(payload.payment_id);
   if (found.status !== 200) return;
-  await updateBookingPayment(found.payload.booking.id, { paymentStatus: 'refunded' });
+  const booking = found.payload.booking;
+  const saved = await updateBookingPayment(booking.id, { paymentStatus: 'refunded' });
+  if (saved.status === 200) {
+    await notify(
+      booking.customer_id,
+      'Payment Refunded',
+      `Your payment of ₹${booking.amount} for ${booking.garment_type} has been refunded`,
+      booking.id
+    );
+  }
 }
 
 module.exports = router;
